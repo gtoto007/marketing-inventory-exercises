@@ -1,0 +1,328 @@
+/*
+Users of the system. role defines what they can do:
+admin (full access), manager (orders, rentals, events, event cost),
+marketing (same as manager, without event cost), system (automated processes).
+*/
+Table users {
+  id bigint [pk, increment, note: 'UNSIGNED']
+  name varchar [not null]
+  email varchar [not null, unique]
+  email_verified_at timestamp [null]
+  password varchar [not null]
+  role user_roles [not null]
+  remember_token varchar(100) [null, note: 'Laravel "remember me" token']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+}
+
+enum user_roles {
+  admin [note: 'full access, manages users, can see the event cost']
+  manager [note: 'orders and rents items, records stock movements, plans events, can see the event cost']
+  marketing [note: 'orders and rents items, records stock movements, plans events, cannot see the event cost']
+  system [note: 'automated processes and integrations']
+}
+
+/*
+Products the marketing team can buy or rent and bring to events (e.g. gadgets, banners, booths).
+min_stock_quantity is the threshold that triggers a reorder or an alert.
+*/
+Table items {
+  id bigint [pk, increment, note: 'UNSIGNED']
+  title varchar [not null]
+  category_id bigint [not null, note: 'ON DELETE RESTRICT: a category cannot be deleted while items still belong to it.']
+  description text [note: 'Content of the item']
+  photo_url varchar
+  ean varchar
+  min_stock_quantity "int unsigned" [note: 'When the quantity in the warehouse drops below this value, the item can be reordered automatically or the manager is notified']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  indexes {
+    (title, category_id) [unique]
+  }
+}
+Ref: items.category_id > categories.id [delete: restrict, update: cascade]
+
+/*
+Item categories, used to group items and for analytics (e.g. return rate per category).
+*/
+Table categories {
+  id bigint [pk, increment, note: 'UNSIGNED']
+  name varchar(100) [not null, unique]
+}
+
+/*
+Companies that sell or rent items (providers and suppliers are merged into this single table).
+Soft delete: a supplier linked to orders or rentals is never hard-deleted.
+*/
+Table suppliers {
+  id bigint [pk, increment, note: 'UNSIGNED']
+  name varchar [not null]
+  phone varchar [not null]
+  email varchar [not null, unique]
+  vat_number varchar [not null]
+  address_line varchar [not null]
+  city varchar(100) [not null]
+  postal_code varchar(20) [not null]
+  country char(2) [not null]
+  website varchar
+
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  deleted_at timestamp [null, note: 'Soft delete. Hard delete allowed only if the supplier is unused (ON DELETE RESTRICT).']
+}
+
+/*
+Items each supplier offers (catalog), filled manually or imported from an external source.
+type says whether the supplier sells the item, rents it, or both:
+PURCHASABLE → purchase_price is set; RENTABLE → rental_daily_rate is set; BOTH → both are set.
+Prices and fees here are the current offer: they are copied into the order or rental items when signed.
+*/
+Table item_supplier {
+  id bigint [pk, increment]
+  sku varchar
+  type supply_type [not null]
+  purchase_price decimal(10,2)
+  rental_daily_rate decimal(10,2)
+  daily_late_fee_per_unit decimal(10,2) [default: 0]
+  non_return_fee decimal(10,2) [default: 0]
+  item_id bigint [not null, note: 'ON DELETE CASCADE: catalog data, not history. If the item is deleted, its supplier offers are deleted too.']
+  supplier_id bigint [not null, note: 'ON DELETE CASCADE: catalog data, not history. Offers are deleted with the supplier (possible only if the supplier is unused).']
+  indexes {
+    (supplier_id, item_id) [unique]
+  }
+}
+Ref: item_supplier.item_id > items.id [delete: cascade, update: cascade]
+Ref: item_supplier.supplier_id > suppliers.id [delete: cascade, update: cascade]
+
+Enum supply_type {
+  PURCHASABLE [note: 'the supplier sells the item']
+  RENTABLE [note: 'the supplier rents the item']
+  BOTH [note: 'the supplier both sells and rents the item']
+}
+
+/*
+An order a user places with a supplier.
+It contains one or more items (`purchase_order_items`).
+*/
+Table purchase_orders {
+  id bigint [pk, increment, note: 'UNSIGNED']
+  shipping_cost decimal(10,2) [not null]
+  shipping_address varchar
+  shipping_city varchar(100)
+  shipping_postal_code varchar(20)
+  shipping_country char(2)
+  status purchase_order_status [not null, default: 'PENDING']
+  supplier_order_number varchar [not null, unique]
+  supplier_id bigint [not null, note: 'ON DELETE RESTRICT: suppliers are soft-deleted. A hard delete is allowed only if the supplier is unused.']
+  created_by bigint [not null, note: 'ON DELETE RESTRICT: a user who created orders cannot be deleted, so we always know who created them.']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+}
+Ref: purchase_orders.supplier_id > suppliers.id [delete: restrict, update: cascade]
+Ref: purchase_orders.created_by > users.id [delete: restrict, update: cascade]
+
+Enum purchase_order_status {
+  PENDING
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+/*
+Items of a purchase order: item, quantity and the price paid.
+When received, each item becomes a stock lot.
+*/
+Table purchase_order_items {
+  id bigint [pk, increment, note: 'UNSIGNED']
+  purchase_order_id bigint [not null, note: 'ON DELETE CASCADE: items are part of the order and are deleted with it. If a item has already generated a stock lot, the restrict on stock_lots blocks the delete.']
+  item_id bigint [not null, note: 'ON DELETE RESTRICT: an item used in a purchase order cannot be deleted.']
+  price decimal(10,2) [not null]
+  qta "int unsigned" [not null]
+  indexes {
+    (purchase_order_id, item_id) [unique]
+  }
+}
+Ref: purchase_order_items.purchase_order_id > purchase_orders.id [delete: cascade, update: cascade]
+Ref: purchase_order_items.item_id > items.id [delete: restrict, update: cascade]
+
+/*
+A rental agreement with a supplier for one or more items.
+It is always linked to one event: an item cannot be rented without an event.
+*/
+Table rental_agreements {
+  id bigint [pk, increment]
+  start_date date [not null]
+  end_date date [not null, note: 'CHECK end_date >= start_date']
+  supplier_agreement_number varchar [not null, unique]
+  shipping_cost decimal(10,2) [not null]
+  status rental_status [not null, default: 'PENDING']
+  created_by bigint [not null, note: 'ON DELETE RESTRICT: a user who created rental agreements cannot be deleted, so we always know who created them.']
+  event_id bigint [not null, note: 'ON DELETE RESTRICT: an event with rental agreements cannot be deleted, since rentals are part of the event cost.']
+  supplier_id bigint [not null, note: 'ON DELETE RESTRICT: a supplier with rental agreements cannot be hard-deleted (soft delete only).']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  indexes {
+    event_id
+  }
+}
+Ref: rental_agreements.created_by > users.id [delete: restrict, update: cascade]
+Ref: rental_agreements.event_id > events.id [delete: restrict, update: cascade]
+Ref: rental_agreements.supplier_id > suppliers.id [delete: restrict, update: cascade]
+
+Enum rental_status {
+  PENDING
+  IN_TRANSIT
+  RECEIVED [note: 'items received from supplier']
+  RETURNED [note: 'items given back to supplier']
+  CANCELLED
+}
+
+/*
+Rented items of an agreement, with quantity, daily rate and fees agreed at signing.
+daily_late_fee_per_unit is charged for each unit and each day after end_date; non_return_fee for each unit lost.
+When received, each item becomes a stock lot.
+*/
+Table rental_agreement_items {
+  id bigint [pk, increment]
+  daily_rate_per_unit decimal(10,2) [not null]
+  daily_late_fee_per_unit decimal(10,2) [not null, default: 0]
+  non_return_fee decimal(10,2) [not null, default: 0]
+  qta "int unsigned" [not null]
+  item_id bigint [not null, note: 'ON DELETE RESTRICT: an item used in a rental agreement cannot be deleted.']
+  rental_agreement_id bigint [not null, note: 'ON DELETE CASCADE: items are part of the agreement and are deleted with it. If a item has already generated a stock lot, the restrict on stock_lots blocks the delete.']
+  indexes {
+    (rental_agreement_id, item_id) [unique]
+  }
+}
+Ref: rental_agreement_items.item_id > items.id [delete: restrict, update: cascade]
+Ref: rental_agreement_items.rental_agreement_id > rental_agreements.id [delete: cascade, update: cascade]
+
+/*
+Every received purchase or rental item becomes a lot.
+ownership_type: OWNED  → purchase_order_item_id is set (price from `purchase_order_items`),
+                RENTED → rental_agreement_item_id is set (daily rate from `rental_agreement_items`).
+The lot points to the purchase order item or rental agreement item it comes from,
+so I can track the stock and its agreed purchase price or rental rates.
+*/
+Table stock_lots {
+  id bigint [pk, increment]
+  item_id bigint [not null, note: 'ON DELETE RESTRICT: an item with stock lots cannot be deleted.']
+  ownership_type ownership_type [not null]
+  purchase_order_item_id bigint [note: 'Set only for OWNED lots. ON DELETE RESTRICT: keeps the link to the purchase (origin and unit cost of the lot).']
+  rental_agreement_item_id bigint [note: 'Set only for RENTED lots. ON DELETE RESTRICT: keeps the link to the rental agreement (which supplier the lot must be returned to).']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  indexes {
+    item_id
+    rental_agreement_item_id
+  }
+}
+Ref: stock_lots.item_id > items.id [delete: restrict, update: cascade]
+Ref: stock_lots.purchase_order_item_id > purchase_order_items.id [delete: restrict, update: cascade]
+Ref: stock_lots.rental_agreement_item_id > rental_agreement_items.id [delete: restrict, update: cascade]
+
+Enum ownership_type {
+  OWNED
+  RENTED
+}
+
+/*
+Append-only history of every change to a lot (from_state → to_state). See the Example flow in README.md.
+Rows are never updated or deleted. performed_by and created_at tell who did it and when.
+Every movement updates `stock_balances` in the same transaction.
+*/
+Table stock_movements {
+  id bigint [pk, increment]
+  qta "int unsigned" [not null]
+  from_state stock_state [note: 'NULL only when goods are received from a supplier']
+  to_state stock_state [not null]
+  reason varchar
+  stock_lot_id bigint [not null, note: 'ON DELETE RESTRICT: movements are the stock history, so a lot with movements cannot be deleted.']
+  event_id bigint [note: 'ON DELETE RESTRICT: an event with stock movements cannot be deleted.']
+  performed_by bigint [not null, note: 'Movements generated by the system or by external integrations (e.g. carrier webhooks) are assigned to a dedicated user with role "system". Movements triggered indirectly by a user action are attributed to that user. ON DELETE RESTRICT: a user who performed movements cannot be deleted, so we always know who did what and when.']
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  indexes {
+    stock_lot_id
+  }
+}
+Ref: stock_movements.stock_lot_id > stock_lots.id [delete: restrict, update: cascade]
+Ref: stock_movements.event_id > events.id [delete: restrict, update: cascade]
+Ref: stock_movements.performed_by > users.id [delete: restrict, update: cascade]
+
+Enum stock_state {
+  in_warehouse
+  at_event
+  in_transit_to_event
+  in_transit_from_event
+  consumed
+  lost
+  returned_to_supplier
+}
+
+/*
+Real-time quantity of each lot per state and event
+(e.g. how many units are in the warehouse, in transit to an event, consumed or lost).
+For each lot, the sum of all states equals the quantity received.
+*/
+Table stock_balances {
+  id bigint [pk, increment]
+  stock_lot_id bigint [not null, note: 'ON DELETE RESTRICT: a lot with a stock balance cannot be deleted.']
+  state stock_state [not null]
+  event_id bigint [null, note: 'Required when state is in_transit_to_event, at_event, in_transit_from_event. Optional for lost or consumed (a gadget can also be given away outside of an event). NULL otherwise. ON DELETE RESTRICT: an event that still has stock linked to it cannot be deleted.']
+  qta "int unsigned" [not null]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+  indexes {
+    (stock_lot_id, state, event_id) [unique]
+    event_id
+  }
+}
+Ref: stock_balances.stock_lot_id > stock_lots.id [delete: restrict, update: cascade]
+Ref: stock_balances.event_id > events.id [delete: restrict, update: cascade]
+
+/*
+Events where items are shipped, used, given away or lost.
+Event cost = consumed/lost owned units × price + rental agreements + `event_shipments`.
+*/
+Table events {
+  id bigint [pk, increment]
+  name varchar [not null]
+  description text [not null]
+  start_date date [not null]
+  end_date date [note: 'CHECK end_date >= start_date']
+  venue_name varchar [not null]
+  address_line varchar [not null]
+  city varchar(100) [not null]
+  postal_code varchar(20) [not null]
+  country_code char(2) [not null]
+  created_at timestamp [not null]
+  updated_at timestamp [not null]
+}
+
+/*
+Shipments to and from an event, with carrier, tracking number and cost.
+*/
+Table event_shipments {
+  id bigint [pk, increment]
+  event_id bigint [not null, note: 'ON DELETE RESTRICT: an event with shipments cannot be deleted, since shipping costs are part of the event cost.']
+  tracking_number varchar [null]
+  carrier_id bigint [not null, note: 'ON DELETE RESTRICT: a carrier used in shipments cannot be deleted.']
+  shipping_cost decimal(10,2) [not null]
+  indexes {
+    (tracking_number, carrier_id) [unique]
+    event_id
+  }
+}
+Ref: event_shipments.event_id > events.id [delete: restrict, update: cascade]
+Ref: event_shipments.carrier_id > carriers.id [delete: restrict, update: cascade]
+
+/*
+Shipping companies used for event shipments.
+*/
+Table carriers {
+  id bigint [pk, increment]
+  name varchar [not null, unique]
+  email varchar [not null]
+  phone varchar [not null]
+}
