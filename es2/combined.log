@@ -1,0 +1,17 @@
+{"timestamp":"2026-10-30T09:34:09.702Z","level":"info","message":"Initializing YouTrack MCP Server","service":"youtrack-mcp","url":"https://onthegosystems.myjetbrains.com/youtrack","tokenLength":61,"toolCount":12}
+{"timestamp":"2026-10-30T09:34:09.703Z","level":"info","message":"Client Factory initialized","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:34:09.704Z","level":"info","message":"YouTrack WebSocket notifications not publicly available","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:34:09.704Z","level":"info","message":"Using alternative notification method (polling-based)","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:34:09.704Z","level":"info","message":"Notification system initialized","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:34:09.704Z","level":"info","message":"Notification system initialized (polling mode)","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:34:09.704Z","level":"info","message":"YouTrack MCP Server connected","service":"youtrack-mcp","transport":"StdioServerTransport","toolCount":12}
+{"timestamp":"2026-10-30T09:34:09.704Z","level":"info","message":"YouTrack MCP Server running with stdio transport","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:45:01.558Z","level":"info","message":"Initializing YouTrack MCP Server","service":"youtrack-mcp","url":"https://onthegosystems.myjetbrains.com/youtrack","tokenLength":61,"toolCount":12}
+{"timestamp":"2026-10-30T09:45:01.559Z","level":"info","message":"Client Factory initialized","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:45:01.560Z","level":"info","message":"YouTrack WebSocket notifications not publicly available","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:45:01.560Z","level":"info","message":"Using alternative notification method (polling-based)","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:45:01.560Z","level":"info","message":"Notification system initialized","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:45:01.560Z","level":"info","message":"Notification system initialized (polling mode)","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:45:01.560Z","level":"info","message":"YouTrack MCP Server connected","service":"youtrack-mcp","transport":"StdioServerTransport","toolCount":12}
+{"timestamp":"2026-10-30T09:45:01.560Z","level":"info","message":"YouTrack MCP Server running with stdio transport","service":"youtrack-mcp"}
+{"timestamp":"2026-10-30T09:47:57.756Z","level":"info","message":"Received SIGINT, shutting down","service":"youtrack-mcp"}
